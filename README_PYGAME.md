@@ -13,12 +13,12 @@ Esta é uma implementação gráfica separada de `batalha.py`. A aplicação reu
 - Menu principal, configurações e tela de preparação com clima e ordem inicial dos turnos.
 - Batalhas Solo e Dupla contra inimigos controlados por IA.
 - Multiplayer local com equipes de 1 a 4 personagens por lado; cada lado escolhe classes ou inimigos.
-- Ações de ataque, defesa, itens básicos, transformação, contrato, descanso e fuga.
+- Artes de classes, inimigos e megaformas na preparação e no campo de batalha.
+- Menu de batalha inspirado em RPGs portáteis, mochila com todos os consumíveis e seleção entre várias megaformas.
+- Ações de ataque, defesa, consumíveis, transformação, contrato, descanso e fuga.
 - Histórico da batalha, vida, energia, escudo, efeitos e tela de resultado com estatísticas.
 - Ambiente de teste com acesso protegido, Dummy, comandos para efeitos, terrenos, combinações, transformação e eliminação, mais registro de testes.
-- Área de preparação e catalogação de prompts de arte; o jogo não gera imagens.
-
-Os resultados do Ambiente de Teste e os prompts preparados são guardados em `dev_test_results.json` e `image_prompt_catalog.json` na pasta do projeto.
+Os resultados do Ambiente de Teste são guardados em `dev_test_results.json` na pasta do projeto.
 
 ## Estrutura
 

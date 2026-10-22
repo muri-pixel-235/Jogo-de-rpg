@@ -4,8 +4,32 @@
 # contador, ataques exclusivos de mega forma, dupla com 2 jogadores,
 # bomba climática que depende do clima.
 # =====================================================
+import builtins
+from copy import deepcopy
 import random
+import sys
+import time
 import unicodedata
+
+
+# A saída da partida aparece com efeito de digitação; menus de configuração
+# continuam instantâneos para não atrasar a entrada de dados.
+DIGITACAO_ATIVA = False
+INTERVALO_DIGITACAO = 0.003
+
+
+def print(*args, sep=" ", end="\n", file=None, flush=False):
+    destino = file if file is not None else sys.stdout
+    texto = (sep or " ").join(str(valor) for valor in args)
+    if DIGITACAO_ATIVA and destino is sys.stdout and end == "\n":
+        for caractere in texto:
+            destino.write(caractere)
+            destino.flush()
+            time.sleep(INTERVALO_DIGITACAO)
+        destino.write(end)
+        destino.flush()
+    else:
+        builtins.print(*args, sep=sep, end=end, file=file, flush=flush)
 
 # multiplicador
 dado = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -38,6 +62,8 @@ EFEITOS = {
     "aprisionado": {"tipo": "impede", "estado": "aprisionado"},
     "afundado":    {"tipo": "lento", "chance": 100, "estado": "afundado"},
     "vulneravel":  {"tipo": "vulneravel", "estado": "vulnerável"},
+    "encharcado":  {"tipo": "status", "estado": "encharcado"},
+    "engasgado":   {"tipo": "dano", "dano": 4, "estado": "engasgado", "elemento": "gas", "chance_lento": 35},
 }
 
 # --- Ressusitador (ativa sozinho quando um herói morre) -----
@@ -120,6 +146,7 @@ CLIMAS = {
     "trovoada": {"nome": "trovoada", "descricao": "Fortalece ataques elétricos.", "elementos": {"raio": 1.25, "eletrico": 1.25}, "bomba": {"dano": 30, "elemento": "raio", "efeito": "paralisado", "duracao": 1}},
     "nevoa": {"nome": "névoa", "descricao": "A precisão de todos diminui bastante.", "elementos": {}, "esquiva_bonus": 35, "bomba": {"dano": 20}},
     "lua_sangue": {"nome": "lua de sangue", "descricao": "Clima sombrio que fortalece ataques de sombra e fogo.", "elementos": {"sombra": 1.2, "fogo": 1.2}, "bomba": {"dano": 30, "elemento": "sombra", "efeito": "medo", "duracao": 2}},
+    "lua_azul": {"nome": "lua azul", "descricao": "Todos recebem 80% menos dano; o portador do colar recebe 90% menos dano.", "elementos": {}, "bomba": {"dano": 20}},
 }
 CLIMA_DURACAO = 5
 
@@ -135,30 +162,30 @@ CHANCE_RELIQUIA_INIMIGO = 35               # % de chance de um inimigo sorteado 
 # tipo "bomba"/"pedra": dano fixo (ignora defesa, mas respeita elemento) + efeito
 # "area" atinge todos os inimigos. A bomba climática depende do clima (veja CLIMAS).
 ITENS = {
-    "poção de cura basica":      {"tipo": "cura", "cura": 20, "quantidade": 3},
-    "poção de cura avançado":    {"tipo": "cura", "cura": 20, "quantidade": 2},
-    "poção de cura hiper":       {"tipo": "cura", "cura": 60, "quantidade": 1},
-    "poção de energia":          {"tipo": "energia", "energia": 40, "quantidade": 2},
-    "antídoto":                  {"tipo": "antidoto", "quantidade": 2},
-    "ressusitador":              {"tipo": "ressusitador", "quantidade": 1},
-    "bomba de fumaça":           {"tipo": "fumaca", "quantidade": 1},
-    "bomba de gelo":             {"tipo": "bomba", "dano": 10, "elemento": "gelo", "aplica": "congelado", "duracao": 1, "area": True, "quantidade": 1},
-    "bomba de fogo":             {"tipo": "bomba", "dano": 20, "elemento": "fogo", "aplica": "queima", "duracao": 3, "area": True, "quantidade": 1},
-    "bomba elétrica":            {"tipo": "bomba", "dano": 12, "elemento": "raio", "aplica": "paralisado", "duracao": 1, "area": True, "quantidade": 1},
-    "bomba climática":           {"tipo": "climatica", "quantidade": 1},
-    "pedra":                     {"tipo": "pedra", "dano": 5, "aplica": "paralisado", "duracao": 1, "chance": 40, "quantidade": 3},
-    "poção de força":            {"tipo": "forca", "multiplicador": 1.25, "duracao": 3, "quantidade": 1},
-    "poção de efeito aleatório": {"tipo": "aleatorio", "duracao": 3, "efeito_duracao": 2, "quantidade": 1},
-    "poção de velocidade":       {"tipo": "velocidade", "velocidade": 25, "quantidade": 1},
-    "elixir da negação": {"tipo": "negacao", "quantidade": 1},
-    "bomba de água": {"tipo": "bomba", "dano": 8, "elemento": "agua", "aplica": "lento", "duracao": 2, "quantidade": 2},
-    "bomba de gas": {"tipo": "bomba", "dano": 8, "elemento": "gas", "aplica": "lento", "duracao": 2, "quantidade": 2},
-    "bomba de vinhas": {"tipo": "bomba", "dano": 5, "elemento": "planta", "aplica": "aprisionado", "duracao": 2, "quantidade": 2},
-    "elixir da tipagem": {"tipo": "tipagem", "quantidade": 1},
-    "poção maximadora": {"tipo": "maximizadora", "duracao": 3, "quantidade": 1},
-    "bomba fragmentada": {"tipo": "bomba", "dano": 18, "area": True, "quantidade": 1},
-    "cruz sagrada": {"tipo": "vulnerabilidade", "elementos": ["fantasma", "sombra"], "quantidade": 1},
-    "correntes sombrias": {"tipo": "vulnerabilidade", "elementos": ["luz"], "quantidade": 1},
+    "poção de cura basica":      {"tipo": "cura", "cura": 20, "quantidade": 3, "descricao": "Recupera 20 HP do aliado escolhido."},
+    "poção de cura avançado":    {"tipo": "cura", "cura": 20, "quantidade": 2, "descricao": "Recupera 20 HP do aliado escolhido."},
+    "poção de cura hiper":       {"tipo": "cura", "cura": 60, "quantidade": 1, "descricao": "Recupera 60 HP do aliado escolhido."},
+    "poção de energia":          {"tipo": "energia", "energia": 40, "quantidade": 2, "descricao": "Restaura 40 EN do aliado escolhido."},
+    "antídoto":                  {"tipo": "antidoto", "quantidade": 2, "descricao": "Remove efeitos de status negativos do aliado."},
+    "ressusitador":              {"tipo": "ressusitador", "quantidade": 1, "descricao": "Tenta reviver um aliado derrotado."},
+    "bomba de fumaça":           {"tipo": "fumaca", "quantidade": 1, "descricao": "Cria uma chance de escapar da batalha."},
+    "bomba de gelo":             {"tipo": "bomba", "dano": 10, "elemento": "gelo", "aplica": "congelado", "duracao": 1, "area": True, "quantidade": 1, "descricao": "Causa 10 de dano de gelo e pode congelar todos os inimigos."},
+    "bomba de fogo":             {"tipo": "bomba", "dano": 20, "elemento": "fogo", "aplica": "queima", "duracao": 3, "area": True, "quantidade": 1, "descricao": "Causa 20 de dano de fogo e queima todos os inimigos."},
+    "bomba elétrica":            {"tipo": "bomba", "dano": 12, "elemento": "raio", "aplica": "paralisado", "duracao": 1, "area": True, "quantidade": 1, "descricao": "Causa 12 de dano elétrico e pode paralisar os inimigos."},
+    "bomba climática":           {"tipo": "climatica", "quantidade": 1, "descricao": "Muda o clima da batalha."},
+    "pedra":                     {"tipo": "pedra", "dano": 5, "aplica": "paralisado", "duracao": 1, "chance": 40, "quantidade": 3, "descricao": "Causa 5 de dano; tem 40% de chance de paralisar."},
+    "poção de força":            {"tipo": "forca", "multiplicador": 1.25, "duracao": 3, "quantidade": 1, "descricao": "Aumenta o dano causado em 25% por 3 turnos."},
+    "poção de efeito aleatório": {"tipo": "aleatorio", "duracao": 3, "efeito_duracao": 2, "quantidade": 1, "descricao": "Concede um efeito aleatório por 3 turnos."},
+    "poção de velocidade":       {"tipo": "velocidade", "velocidade": 25, "quantidade": 1, "descricao": "Aumenta a velocidade do aliado em 25."},
+    "elixir da negação": {"tipo": "negacao", "quantidade": 1, "descricao": "Remove efeitos positivos do inimigo escolhido."},
+    "bomba de água": {"tipo": "bomba", "dano": 8, "elemento": "agua", "aplica": "encharcado", "duracao": 2, "quantidade": 2, "descricao": "Causa 8 de dano e deixa o alvo encharcado, vulnerável a ataques elétricos."},
+    "bomba de gas": {"tipo": "bomba", "dano": 8, "elemento": "gas", "aplica": "engasgado", "duracao": 2, "quantidade": 2, "descricao": "Causa 8 de dano de gás e pode engasgar o alvo."},
+    "bomba de vinhas": {"tipo": "bomba", "dano": 5, "elemento": "planta", "aplica": "aprisionado", "duracao": 2, "quantidade": 2, "descricao": "Causa 5 de dano e aprisiona o alvo por 2 turnos."},
+    "elixir da tipagem": {"tipo": "tipagem", "quantidade": 1, "descricao": "Altera temporariamente o elemento dos ataques."},
+    "poção maximadora": {"tipo": "maximizadora", "duracao": 3, "quantidade": 1, "descricao": "Maximiza atributos temporariamente por 3 turnos."},
+    "bomba fragmentada": {"tipo": "bomba", "dano": 18, "area": True, "quantidade": 1, "descricao": "Causa 18 de dano a todos os inimigos."},
+    "cruz sagrada": {"tipo": "vulnerabilidade", "elementos": ["fantasma", "sombra"], "quantidade": 1, "descricao": "Deixa inimigos fantasma e sombra vulneráveis."},
+    "correntes sombrias": {"tipo": "vulnerabilidade", "elementos": ["luz"], "quantidade": 1, "descricao": "Deixa inimigos de luz vulneráveis."},
 }
 
 # =====================================================
@@ -195,9 +222,9 @@ RELIQUIAS_INIMIGO = {
 RELIQUIAS.update({
     "espada elemental": {"descricao": "Altera o elemento dos ataques conforme o clima.", "vida_max": 0, "mods": {"espada_elemental": True}},
     "grande espada": {"descricao": "+50% de dano; ataques fortes precisam carregar.", "vida_max": 0, "mods": {"dano": 1.5}},
-    "armadura amaldiçoada": {"descricao": "+100% de vida, -20% de dano e velocidade.", "vida_max": 1.0, "mods": {"dano": 0.8, "velocidade": -20}},
+    "armadura amaldiçoada": {"descricao": "+100% de vida, -20% de dano e -20% de velocidade.", "vida_max": 1.0, "mods": {"dano": 0.8, "velocidade_mult": 0.8}},
     "pingente da rejeição": {"descricao": "+100% vida, energia e velocidade; sem escudo, fuga, cura ou consumíveis arremessáveis.", "vida_max": 1.0, "mods": {"energia_max": 1.0, "velocidade_mult": 2.0}},
-    "escudo heroico": {"descricao": "+100% de escudo; recebe +12,5% de dano.", "vida_max": 0, "mods": {"escudo_mult": 2.0, "reducao": -0.125}},
+    "escudo heroico": {"descricao": "+100% de escudo; o portador causa 12,5% menos dano.", "vida_max": 0, "mods": {"escudo_mult": 2.0, "dano": 0.875}},
 })
 RELIQUIAS_INIMIGO.update({
     "katanas encantadas": {"descricao": "+20% contra combatentes armados com espada.", "vida_max": 0, "mods": {"dano_espadas": 1.2}},
@@ -692,6 +719,7 @@ INIMIGOS = {
 
 # Expansão do patch: conteúdo partilhado pela versão de terminal e Pygame.
 ATAQUES.update({
+    "bater": {"dano": 12, "energia": 0, "categoria": "fisico"},
     "disparo preciso": {"dano": 24, "energia": 15, "elemento": "neutro"},
     "tiro carregado": {"dano": 52, "energia": 35, "carrega": 2},
     "tiro de prata": {"dano": 32, "energia": 25, "elemento": "metal"},
@@ -773,6 +801,189 @@ CLASSES.update({
                     "bonus": {"reducao": 0.2, "defesa": 8}, "ataques": ["soco de pedra", "martelada"]}]},
 })
 
+# Patch de combate: novas técnicas, a classe Médico e o rework do Boxeador.
+ATAQUES.update({
+    "socos rápidos": {"dano": 6, "energia": 12, "golpes": 5, "categoria": "fisico"},
+    "soco pesado": {"dano": 12, "energia": 18, "golpes": 3, "efeito": "paralisado", "duracao": 1, "chance": 10},
+    "sequência de socos": {"dano": 4, "energia": 20, "golpes": 10, "efeito": "paralisado", "duracao": 1, "chance": 10},
+    "socos duplos": {"dano": 10, "energia": 14, "golpes": 2},
+    "gancho": {"dano": 34, "energia": 24, "categoria": "fisico", "efeito": "lento", "duracao": 1},
+    "bailão de socos": {"dano": 10, "energia": 45, "golpes_aleatorios": [1, 10], "requer": 6, "categoria": "especial"},
+    "combo de socos ardentes": {"dano": 12, "energia": 32, "golpes": 5, "elemento": "fogo", "efeito": "queima", "duracao": 2},
+    "injeção de cura": {"dano": 0, "energia": 18, "prioridade": 2, "util": {"cura": 35}},
+    "injeção de força": {"dano": 0, "energia": 16, "prioridade": 2, "util": {"buff": "forca", "duracao": 3}},
+    "injeção de energia": {"dano": 0, "energia": 8, "prioridade": 2, "util": {"energia": 35}},
+    "injeção botânica": {"dano": 18, "energia": 22, "elemento": "planta", "efeito": "veneno", "duracao": 2},
+    "wide barrier": {"dano": 0, "energia": 25, "util": {"protecao": 30, "rodadas": 2, "alvos": 2}},
+    "aura de força": {"dano": 0, "energia": 20, "util": {"buff": "forca", "duracao": 3, "equipe": True}},
+    "aura de velocidade": {"dano": 0, "energia": 18, "util": {"buff": "velocidade", "duracao": 3, "equipe": True}},
+    "agilidade": {"dano": 0, "energia": 14, "prioridade": 2, "util": {"buff": "velocidade", "duracao": 3}},
+    "follow me": {"dano": 0, "energia": 15, "prioridade": 1, "util": {"provocar": 2}},
+    "sacrifício": {"dano": 0, "energia": 0, "util": {"sacrificio": 1.25}},
+    "roubar": {"dano": 5, "energia": 12, "util": {"roubar": True}},
+    "critic upper": {"dano": 20, "energia": 24, "prioridade": 1, "categoria": "efeito", "util": {"critico": 30, "duracao": 2}},
+    "fake out": {"dano": 5, "energia": 8, "prioridade": 3, "categoria": "efeito", "efeito": "paralisado", "duracao": 1, "primeiro_turno": True},
+    "olhos especiais": {"dano": 0, "energia": 12, "util": {"buff": "critico", "duracao": 3}},
+    "corte dimensional": {"dano": 55, "energia": 40, "elemento": "sombra", "perfura": 1.0},
+    "queimar": {"dano": 24, "energia": 20, "elemento": "fogo", "efeito": "queima", "duracao": 3},
+    "corte flamejante": {"dano": 38, "energia": 28, "elemento": "fogo", "efeito": "queima", "duracao": 2},
+    "expansão de domínio": {"dano": 0, "energia": 35, "categoria": "efeito", "util": {"dominio": True}},
+})
+CLASSES["boxeador"].update({
+    "vida": 110, "energia": 100, "velocidade": 85, "critico": 12, "defesa": 2, "escudo": 35,
+    "ataques": ["socos rápidos", "soco pesado", "sequência de socos", "socos duplos", "gancho", "bailão de socos"],
+    "habilidade": {"nome": "Prova de bravura", "descricao": "Após 5 turnos sem fugir, defender ou usar itens, ganha força; aos 10 turnos libera o contrato exclusivo.", "mods": {"prova_bravura": True}},
+    "formas": [{"letra": "X", "nome": "Boxeador retornante do inferno", "elemento": "fogo", "descricao": "Forma normal/fogo; desbloqueia Combo de socos ardentes e Death Eyes, que causa medo.", "bonus": {"dano": 1.2}, "ataques": ["combo de socos ardentes", "olhar medonho"]}],
+})
+CLASSES["boxeador"]["ataques"].extend(["critic upper", "fake out"])
+CLASSES["boxeador"]["contratos"] = ["contrato das correntes igualitárias de fogo"]
+CLASSES["médico"] = {
+    "vida": 95, "energia": 120, "velocidade": 55, "critico": 8, "defesa": 3, "escudo": 45,
+    "elemento": "neutro", "funcao": "Suporte", "dificuldade": "Média",
+    "ataques": ["faquinha", "injeção de cura", "injeção de força", "injeção de energia"],
+    "habilidade": {"nome": "Triagem", "descricao": "Recebe prioridade nas injeções de suporte.", "mods": {"prioridade_suporte": 1}},
+    "formas": [{"letra": "X", "nome": "Médico Botânico", "elemento": "planta", "descricao": "A megaforma planta fortalece a cura e os ataques botânicos.", "bonus": {"dano": 1.15}, "ataques": ["injeção botânica", "injeção de cura"]}],
+}
+CLASSES["médico"]["ataques"].extend(["wide barrier", "aura de força", "aura de velocidade", "agilidade", "sacrifício"])
+CLASSES["tanque"]["ataques"].append("follow me")
+CONTRATOS["contrato das correntes igualitárias de fogo"] = {
+    "descricao": "Liga o Boxeador a um combatente e iguala vida, energia e escudo pela média dos dois. Exclusivo após 10 turnos de bravura.",
+    "mods": {"ligacao_igualitaria": True}, "duracao": 0,
+}
+CONTRATOS["contrato do punho infernal"] = {
+    "descricao": "+50% de dano e crítico garantido por 3 turnos; depois fica exausto. Exclusivo do Boxeador após 10 turnos de bravura.",
+    "mods": {"dano": 1.5, "critico": 100}, "restringe": ["descansar"], "duracao": 3,
+}
+CONTRATOS["contrato das chamas hollow"] = {
+    "descricao": "Converte consumíveis em bônus de dano, defesa e energia; depois impede novos itens.",
+    "mods": {"dano": 1.25, "defesa": 10, "energia_turno": 15}, "restringe": ["itens"],
+}
+CONTRATOS["sofrimento contínuo"] = {
+    "descricao": "Sangramento permanente em troca de grande resistência; não pode ser encerrado voluntariamente.",
+    "mods": {"reducao": 0.9, "vampirismo": 0.1}, "restringe": ["descansar"],
+}
+CONTRATOS_PERSONAGEM = {
+    "cavaleiro": ["contrato da fúria"], "mago": ["contrato da sombra"], "arqueiro": ["contrato de sangue"],
+    "velocista": ["contrato da sombra"], "atirador": ["contrato de sangue"], "boxeador": ["contrato das correntes igualitárias de fogo"],
+    "monge": ["contrato da sombra"], "cavaleiro negro": ["contrato do tirano"],
+    "alquimista": ["contrato de sangue"], "tanque": ["contrato do tirano"], "médico": ["contrato da sombra"],
+}
+CLASSES["médico"]["contratos"] = CONTRATOS_PERSONAGEM["médico"]
+ATAQUES.update({
+    "tiros quadruplos": {"dano": 7, "golpes": 4, "energia": 10, "elemento": "fogo"},
+    "tiros duplos": {"dano": 12, "golpes": 2, "energia": 20, "elemento": "fogo"},
+    "correntes flamejantes": {"dano": 25, "energia": 30, "elemento": "fogo", "efeito": "aprisionado", "duracao": 2},
+    "explosão de fogo e gás": {"dano": 35, "energia": 50, "elemento": "fogo", "area": True, "efeito": "queima", "duracao": 2},
+    "moto das chamas": {"dano": 70, "energia": 80, "elemento": "fogo", "requer": 4},
+    "olhar punitivo": {"dano": 45, "energia": 50, "elemento": "fogo"},
+    "metal rígido": {"dano": 0, "energia": 10, "util": {"buff": "defesa", "defesa": 20, "duracao": 2}},
+    "soco metálico": {"dano": 20, "energia": 15, "elemento": "metal"},
+    "socos rápidos do Project": {"dano": 10, "golpes": 2, "energia": 15},
+    "fuzilada de prata": {"dano": 3, "golpes": 30, "energia": 25, "elemento": "metal"},
+    "socos duplos metálicos": {"dano": 10, "golpes": 2, "energia": 30, "elemento": "metal"},
+    "disco ressonance": {"dano": 0, "energia": 0, "util": {"alternar_forma": True}},
+    "múltiplos socos": {"dano": 5, "golpes": 10, "energia": 15},
+    "disparo sônico": {"dano": 45, "energia": 30, "carrega": 1, "elemento": "ar"},
+    "disparo triplo": {"dano": 15, "golpes": 3, "energia": 25, "elemento": "ar"},
+    "mega disparo": {"dano": 95, "energia": 100, "carrega": 2, "elemento": "ar"},
+    "proteger-se": {"dano": 0, "energia": 20, "util": {"imunidade": 2}},
+    "soco pesado metálico": {"dano": 25, "energia": 30, "elemento": "metal"},
+    "mega marreta": {"dano": 35, "energia": 45, "elemento": "metal"},
+    "toque paralisante": {"dano": 0, "energia": 10, "efeito": "paralisado", "duracao": 1},
+    "zona elétrica": {"dano": 0, "energia": 30, "util": {"clima": "tempestade", "terreno": "Terreno elétrico"}},
+    "soquinhos velozes": {"dano": 6, "golpes": 6, "energia": 10},
+})
+CLASSES["pistoleiro caveira de fogo"] = {
+    "vida": 125, "energia": 120, "velocidade": 55, "critico": 15, "defesa": 8, "escudo": 50,
+    "elemento": "fogo", "tipos": ["fogo", "fantasma"], "funcao": "HDD", "dificuldade": "Difícil",
+    "transform_requer_ataques": 3, "contrato_requer_ataques": 4,
+    "ataques": ["tiros quadruplos", "tiros duplos", "correntes flamejantes", "explosão de fogo e gás", "moto das chamas"],
+    "habilidade": {"nome": "Hell Adaptive", "descricao": "Aumenta o dano em climas e terrenos de fogo.", "mods": {"hell_adaptive": True}},
+    "formas": [{"letra": "X", "nome": "Justiceiro das Chamas", "elemento": "fogo",
+                 "descricao": "Invoca clima e terreno de fogo; libera Olhar Punitivo.",
+                 "ataques": ["olhar punitivo"], "ao_transformar": {"clima": "sol", "terreno": "Terreno magmático"},
+                 "habilidade": {"nome": "My Home", "descricao": "O campo se torna um domínio flamejante."}}],
+}
+CONTRATOS_PERSONAGEM["pistoleiro caveira de fogo"] = ["contrato da fúria"]
+CLASSES["pistoleiro caveira de fogo"]["contratos"] = CONTRATOS_PERSONAGEM["pistoleiro caveira de fogo"]
+RELIQUIAS.update({
+    "dente-de-vampiro": {"descricao": "Torna o portador sombrio e drena 30% do dano causado como vida.", "vida_max": 0, "mods": {"vampirismo": 0.30, "elemento": "sombra"}},
+    "speed-cannon": {"descricao": "Remove o carregamento dos ataques, mas reduz o dano em 20%.", "vida_max": 0, "mods": {"remove_carregamento": True, "dano": 0.8}},
+    "óculos velozes": {"descricao": "+10% de velocidade e esquiva.", "vida_max": 0, "mods": {"velocidade_mult": 1.1, "esquiva": 10}},
+    "amuleto de absorção elemental": {"descricao": "Absorve o elemento do clima e converte 20% do dano absorvido em cura.", "vida_max": 0, "mods": {"absorve_clima": True}},
+    "corrente enferrujada": {"descricao": "Impede a fuga e aumenta o dano causado em 50%.", "vida_max": 0, "mods": {"dano": 1.5}, "restringe": ["fugir"]},
+    "lâmina enferrujada": {"descricao": "Reduz o dano causado em 30% e aplica veneno e gás ao inimigo atingido.", "vida_max": 0, "mods": {"dano": 0.7, "on_hit": {"efeitos": ["veneno", "engasgado"], "duracao": 2}}},
+    "corrente do sofrimento": {"descricao": "Sangramento permanente, recebe 90% menos dano e desbloqueia contrato exclusivo.", "vida_max": 0, "mods": {"reducao": 0.9}},
+    "boneco substituto": {"descricao": "Uma vez, abaixo de 30% da vida, bloqueia ataques por 3 turnos.", "vida_max": 0, "mods": {"substituto": True}},
+    "olho vermelho escuro": {"descricao": "Invoca a Lua de Sangue durante a batalha.", "vida_max": 0, "mods": {"lua_sangue": True}},
+    "amuleto cúbico": {"descricao": "Invoca o clima Lua Azul e o terreno Synthwave Azul; melhora a precisão de ataques carregados.", "vida_max": 0, "mods": {"lua_azul": True, "terreno_synthwave": True, "precisao_carregados": 25}},
+    "corrente inferrujada": {"descricao": "Impede a fuga e aumenta o dano causado em 50%.", "vida_max": 0, "mods": {"dano": 1.5}, "restringe": ["fugir"]},
+})
+RELIQUIAS_INIMIGO.update({
+    "coroa gigante cromática": {"descricao": "Recebe uma tipagem adicional conforme clima e terreno.", "vida_max": 0, "mods": {"tipagem_climatica": True}},
+    "martelo conquistador": {"descricao": "Aumenta a chance de crítico.", "vida_max": 0, "mods": {"critico": 20}},
+    "armadura de espinhos": {"descricao": "Devolve 20% do dano recebido.", "vida_max": 0, "mods": {"espinhos": 0.2}},
+    "documento de anti-fraqueza": {"descricao": "Anula fraquezas elementais; ataques efetivos causam dano normal.", "vida_max": 0, "mods": {"imune_fraquezas": True}},
+    "vaso ganancioso": {"descricao": "Ganha dano ao atacar repetidamente e fica mais vulnerável.", "vida_max": 0, "mods": {"dano_progressivo": True}},
+    "soco inglês afiado": {"descricao": "Cada ataque aplica sangramento.", "vida_max": 0, "mods": {"on_hit": {"efeito": "sangramento", "duracao": 2}}},
+    "corrente de ligação": {"descricao": "Liga o portador a um alvo e divide igualmente vida máxima, escudo e energia máximos.", "vida_max": 0, "mods": {"ligacao_igualitaria": True}},
+    "special glasses": {"descricao": "Aumenta a precisão dos ataques.", "vida_max": 0, "mods": {"precisao": 20}},
+    "mini coração de vidro": {"descricao": "Ao morrer, revive uma vez com metade da vida original.", "vida_max": 0, "mods": {"reviver_cristal": 100, "vida_retorno": 0.5}},
+    "wonder-guard": {"descricao": "Fica com 1 HP e só pode ser derrotado por ataque efetivo.", "vida_max": -0.99, "mods": {"wonder_guard": True}},
+    "porquinho estourável": {"descricao": "A cada 3 turnos causa dano em todos, incluindo o portador.", "vida_max": 0, "mods": {"porquinho": True}},
+    "olho que tudo vê": {"descricao": "Revela e neutraliza a relíquia dos combatentes em campo.", "vida_max": 0, "mods": {"revela_reliquias": True}},
+})
+ITENS.update({
+    "barril de vinho": {"tipo": "vinho", "quantidade": 1, "descricao": "Restaura toda a vida; o usuário perde os próximos 2 turnos."},
+    "barril": {"tipo": "barril", "quantidade": 1, "descricao": "Armazena até 3 itens, exceto poções e pedras; pode impor restrições."},
+    "woogie-woogie": {"tipo": "troca_atributos", "quantidade": 1, "descricao": "Troca vida, energia e escudo entre o usuário e o alvo."},
+    "pedra de chamas": {"tipo": "bomba", "dano": 16, "elemento": "fogo", "aplica": "queima", "duracao": 2, "quantidade": 1, "descricao": "Causa dano de fogo e pode queimar o alvo."},
+    "alma": {"tipo": "alma", "quantidade": 1, "descricao": "Escolha um bônus temporário de ataque, defesa ou energia."},
+    "bomba de chamas azuis": {"tipo": "bomba", "dano": 32, "elemento": "fogo", "aplica": "queima", "duracao": 3, "quantidade": 1, "descricao": "Causa dano intenso de fogo e queima o alvo."},
+})
+RELIQUIAS.update({
+    "amuleto de absorção elemental": {"descricao": "Absorve o elemento associado ao clima; converte 20% do dano absorvido em cura.", "vida_max": 0, "mods": {"absorve_clima": True}},
+    "máscara de esqueleto": {"descricao": "Substitui ataques, megaformas, contrato e consumíveis por opções de chamas e Hollow.", "vida_max": 0, "mods": {"mascara_esqueleto": True}},
+    "soco inglês sequente": {"descricao": "Repetir o mesmo ataque acumula até +100% de dano; ao completar, o próximo golpe é crítico garantido.", "vida_max": 0, "mods": {"combo_repetido": True}},
+})
+RELIQUIAS_INIMIGO.update({
+    "coração de cristal": {"descricao": "Ao ser derrotado, tem chance de reviver com vida completa, quebrando o coração.", "vida_max": 0, "mods": {"reviver_cristal": 35}},
+    "lâmina do sacrifício": {"descricao": "Se não curou, transformou ou contratou, sobrevive como Verme por 5 rodadas.", "vida_max": 0, "mods": {"verme_sacrificio": True}},
+    "armadura elemental cromática": {"descricao": "Adiciona uma tipagem elemental segundo o clima atual.", "vida_max": 0, "mods": {"tipagem_climatica": True}},
+    "colar de ouro da lua protetora": {"descricao": "Invoca Lua Azul: todos recebem -80% de dano; o portador recebe -90%.", "vida_max": 0, "mods": {"lua_azul": True}},
+    "fruto de fogo": {"descricao": "Enquanto queimado, recupera vida a cada turno de queimadura.", "vida_max": 0, "mods": {"fruto_queimadura": True}},
+    "fruto elétrico": {"descricao": "Enquanto queimado, recupera vida a cada turno de queimadura.", "vida_max": 0, "mods": {"fruto_queimadura": True}},
+    "fruto gelado": {"descricao": "Enquanto queimado, recupera vida a cada turno de queimadura.", "vida_max": 0, "mods": {"fruto_queimadura": True}},
+})
+EFEITOS.update({
+    "encharcado": {"tipo": "status", "estado": "encharcado"},
+    "engasgado": {"tipo": "dano", "dano": 4, "estado": "engasgado", "elemento": "gas", "chance_lento": 35},
+})
+
+# As classes expõem função e dificuldade junto dos atributos já existentes.
+_FUNCOES_CLASSE = {
+    "cavaleiro": ("DPS", "Média"), "mago": ("HDD", "Difícil"), "arqueiro": ("HDD", "Média"),
+    "velocista": ("DPS", "Difícil"), "atirador": ("HDD", "Média"), "boxeador": ("DPS", "Média"),
+    "monge": ("Suporte", "Média"), "cavaleiro negro": ("Tank", "Difícil"),
+    "alquimista": ("Suporte", "Difícil"), "tanque": ("Tank", "Fácil"), "médico": ("Suporte", "Média"),
+}
+for _nome_classe, _dados_classe in CLASSES.items():
+    _funcao, _dificuldade = _FUNCOES_CLASSE.get(_nome_classe, ("DPS", "Média"))
+    _dados_classe.setdefault("funcao", _funcao)
+    _dados_classe.setdefault("dificuldade", _dificuldade)
+    _dados_classe.setdefault("contratos", CONTRATOS_PERSONAGEM.get(_nome_classe, list(CONTRATOS)))
+for _nome_ataque, _ataque in ATAQUES.items():
+    if _ataque.get("requer"):
+        _ataque.setdefault("categoria", "especial")
+    elif _ataque.get("util") or (_ataque.get("dano", 0) == 0 and _ataque.get("efeito")):
+        _ataque.setdefault("categoria", "efeito")
+    elif _ataque.get("elemento") and _ataque.get("elemento") not in ("neutro", "metal"):
+        _ataque.setdefault("categoria", "magico")
+    else:
+        _ataque.setdefault("categoria", "fisico")
+for _classe_nome, _classe_dados in CLASSES.items():
+    _classe_dados["ataques"] = list(dict.fromkeys([*_classe_dados.get("ataques", []), *(n for n, a in ATAQUES.items() if a.get("categoria") == "especial" and n in _classe_dados.get("ataques", []))]))
+
 INIMIGOS.update({
     "golem de pedra": {"artigo": "o", "elemento": "rocha", "vida": 130, "defesa": 20, "escudo": 35, "energia": 80, "velocidade": 25, "critico": 5,
         "ataques": ["deslizamento de pedra", "soco de pedra", "rolamento", "esmagar"], "acoes": ["atacar", "defender", "contrato", "fugir"], "contratos": list(CONTRATOS),
@@ -788,7 +999,7 @@ INIMIGOS.update({
     "atiradora": {"artigo": "a", "elemento": "neutro", "vida": 95, "defesa": 8, "escudo": 50, "energia": 120, "velocidade": 55, "critico": 18,
         "ataques": ["tiro prateado", "headshot", "tiro carregado", "seis disparos"], "acoes": ["atacar", "defender", "contrato", "transformar"], "contratos": list(CONTRATOS),
         "habilidade": {"nome": "Atiradora precisa", "descricao": "Alta precisão.", "mods": {"dano": 1.1}},
-        "formas": [{"nome": "Atiradora precisa", "ataques": ["headshot"], "descricao": "Fica invisível na névoa.", "habilidade": {"nome": "Invisibilidade na névoa", "descricao": "Esquiva elevada na névoa.", "mods": {"esquiva": 30}}}]},
+        "formas": [{"nome": "Atiradora das Brumas", "ataques": ["headshot"], "descricao": "Fica invisível na névoa.", "habilidade": {"nome": "Invisibilidade na névoa", "descricao": "Esquiva elevada na névoa.", "mods": {"esquiva": 30}}}]},
     "cavaleiro negro conquistador": {"artigo": "o", "elemento": "sombra", "vida": 180, "defesa": 22, "escudo": 65, "energia": 150, "velocidade": 45, "critico": 12,
         "ataques": ["avanço conquistador", "batida", "trovoada conquistadora", "batida pesada"], "acoes": ["atacar", "defender", "transformar", "contrato"], "contratos": list(CONTRATOS),
         "habilidade": {"nome": "Intimidar", "descricao": "Aterroriza adversários.", "mods": {"on_hit": {"efeito": "medo", "duracao": 1, "chance": 20}}},
@@ -817,6 +1028,78 @@ DIFICULDADES = {
 DIFICULDADES["médio"].extend(["golem de pedra", "golem de metal", "atiradora"])
 DIFICULDADES["difícil"].extend(["cavaleiro negro conquistador", "juiz", "samurai arrogante de katana duplas"])
 DIFICULDADES["especial"] = ["king kobra"]
+
+DOMINIOS = {
+    "cavaleiro": {"normal": "Campo de guerra", "Mega Fogo": "Campo infernal", "Mega Água": "Oceano", "Mega Planta": "Amazônia"},
+    "mago": {"normal": "Santuário arcano", "Arquimago": "Biblioteca das estrelas", "Sábio das Tempestades": "Olho da tempestade"},
+    "arqueiro": {"normal": "Floresta do tiro perfeito", "Olho de Águia": "Mirante da águia", "Caçador Sombrio": "Floresta sem lua"},
+    "velocista": {"normal": "Pista do relâmpago", "Modo Relâmpago": "Circuito da tempestade"},
+    "atirador": {"normal": "Linha de tiro absoluta", "Atirador de elite": "Mira do horizonte"},
+    "boxeador": {"normal": "Ringue dos cem golpes", "Boxeador retornante do inferno": "Ringue das chamas infernais"},
+    "monge": {"normal": "Templo da harmonia", "Mestre do Vento": "Santuário do vento eterno"},
+    "cavaleiro negro": {"normal": "Trono das trevas", "Soberano das Trevas": "Abismo do soberano"},
+    "alquimista": {"normal": "Laboratório instável", "Químico Tóxico": "Jardim das toxinas"},
+    "tanque": {"normal": "Fortaleza inabalável", "Bastião de Aço": "Bastião impenetrável"},
+    "médico": {"normal": "Clínica de campanha", "Médico Botânico": "Jardim da vida"},
+    "necromante": {"normal": "Festa dos mortos", "Lich Supremo": "Cemitério dos esqueletos guerreiros"},
+}
+DOMINIOS["pistoleiro caveira de fogo"] = {"normal": "Terra de fogo", "Justiceiro das Chamas": "Terra de fogo"}
+# Expansão passa a ser uma ação comum a todas as classes e aos inimigos difíceis.
+for _classe_com_dominio in DOMINIOS:
+    if _classe_com_dominio in CLASSES and "expansão de domínio" not in CLASSES[_classe_com_dominio]["ataques"]:
+        CLASSES[_classe_com_dominio]["ataques"].append("expansão de domínio")
+for _inimigo_com_dominio, _dados_com_dominio in INIMIGOS.items():
+    if (_inimigo_com_dominio in DIFICULDADES.get("difícil", [])
+            or _inimigo_com_dominio in DIFICULDADES.get("especial", [])):
+        if "expansão de domínio" not in _dados_com_dominio["ataques"]:
+            _dados_com_dominio["ataques"].append("expansão de domínio")
+ATAQUES["disco ressonance"]["util"]["alternar_forma"] = True
+INIMIGOS["project the fake human"] = {
+    "artigo": "o", "elemento": "metal", "vida": 100, "defesa": 15, "velocidade": 25, "energia": 100, "escudo": 25, "critico": 8,
+    "ataques": ["metal rígido", "soco metálico", "fuzilada de prata", "socos duplos metálicos", "disco ressonance"],
+    "acoes": ["atacar", "defender", "transformar"],
+    "formas": [
+        {"letra": None, "nome": "Forma de ataque", "vida": 85, "escudo": 15, "energia": 150, "velocidade": 15, "defesa": 5,
+         "elemento": "metal", "ataques": ["múltiplos socos", "disparo sônico", "disparo triplo", "mega disparo", "disco ressonance"]},
+        {"letra": None, "nome": "Forma de defesa", "vida": 180, "escudo": 60, "energia": 80, "velocidade": 10, "defesa": 30,
+         "elemento": "metal", "ataques": ["proteger-se", "follow me", "soco pesado metálico", "mega marreta", "disco ressonance"]},
+        {"letra": None, "nome": "Forma veloz", "vida": 80, "escudo": 30, "energia": 180, "velocidade": 200, "defesa": 5,
+         "elemento": "raio", "ataques": ["toque paralisante", "socos rápidos do Project", "zona elétrica", "soquinhos velozes", "disco ressonance"]},
+    ],
+    "habilidade": {"nome": "Disco Ressonance", "descricao": "Alterna entre configurações de combate."},
+}
+DIFICULDADES["difícil"].append("project the fake human")
+for _nome_inimigo in set(sum(DIFICULDADES.values(), [])):
+    _dados_inimigo = INIMIGOS.get(_nome_inimigo)
+    if _dados_inimigo:
+        _dados_inimigo.setdefault("dificuldade", next((nivel for nivel, lista in DIFICULDADES.items() if _nome_inimigo in lista), "Difícil"))
+        _dados_inimigo.setdefault("funcao", "HDD" if _dados_inimigo.get("critico", 0) >= 15 else "Tank" if _dados_inimigo.get("defesa", 0) >= 15 else "DPS")
+        if _dados_inimigo["dificuldade"] in ("difícil", "especial"):
+            _dados_inimigo.setdefault("dominio", f"Domínio de {INIMIGOS[_nome_inimigo].get('elemento', 'batalha')}")
+for _nome_inimigo, _dados_inimigo in INIMIGOS.items():
+    if len(_dados_inimigo.get("contratos", [])) > 1:
+        _elemento = _dados_inimigo.get("elemento", "neutro")
+        if _dados_inimigo.get("defesa", 0) >= 18:
+            _dados_inimigo["contratos"] = ["contrato do tirano"]
+        elif _elemento in ("sombra", "fantasma", "veneno"):
+            _dados_inimigo["contratos"] = ["contrato da sombra"]
+        elif _elemento in ("fogo", "metal", "terra", "rocha"):
+            _dados_inimigo["contratos"] = ["contrato da fúria"]
+        else:
+            _dados_inimigo["contratos"] = ["contrato de sangue"]
+for _nome_classe, _dados_classe in CLASSES.items():
+    _dominios_classe = DOMINIOS[_nome_classe]
+    _dados_classe["dominio"] = _dominios_classe["normal"]
+    for _forma_classe in _dados_classe.get("formas", []):
+        if _forma_classe.get("nome") in _dominios_classe:
+            _forma_classe["dominio"] = _dominios_classe[_forma_classe["nome"]]
+    if "expansão de domínio" not in _dados_classe.setdefault("ataques", []):
+        _dados_classe["ataques"].append("expansão de domínio")
+if "necromante" in INIMIGOS:
+    INIMIGOS["necromante"]["dominio"] = DOMINIOS["necromante"]["normal"]
+for _nome_inimigo in set(sum(DIFICULDADES.values(), [])):
+    if _nome_inimigo in INIMIGOS and INIMIGOS[_nome_inimigo].get("dificuldade") in ("difícil", "especial"):
+        INIMIGOS[_nome_inimigo].setdefault("ataques", []).append("expansão de domínio")
 
 # =====================================================
 # FUNÇÕES AUXILIARES
@@ -882,7 +1165,7 @@ INVOCAVEIS = {
     "espírito de fogo": {"elemento": "fogo", "vida": 58, "defesa": 8, "velocidade": 70, "energia": 45, "ataques": ["lâmina flamejante"]},
 }
 
-BUFF_NOMES = {"forca": "força", "aleatorio": "efeito aleatório"}
+BUFF_NOMES = {"forca": "força", "aleatorio": "efeito aleatório", "defesa": "defesa", "velocidade": "velocidade", "critico": "crítico"}
 
 
 def equipar_reliquia(c, nome, dados_reliquia):
@@ -909,6 +1192,17 @@ def equipar_reliquia(c, nome, dados_reliquia):
         definir_terreno("Terreno magmático")
     if nome == "amuleto da lua de sangue":
         definir_clima("lua_sangue", 999)
+    if nome == "colar de ouro da lua protetora":
+        definir_clima("lua_azul", 999)
+    if nome == "máscara de esqueleto":
+        c["ataques"] = ["olhos especiais", "corte dimensional", "queimar", "corte flamejante"]
+        c["formas"] = [
+            {"letra": "X", "nome": "Hollow das chamas", "elemento": "fogo", "ataques": ["corte flamejante"]},
+            {"letra": "Y", "nome": "King hollow", "elemento": "sombra", "bonus": {"dano": 1.2}, "ataques": ["corte dimensional"]},
+            {"letra": "Z", "nome": "Hollow chifrudo", "elemento": "fogo", "bonus": {"critico": 25}, "ataques": ["queimar"]},
+        ]
+        c["contratos"] = ["contrato das chamas hollow"]
+        c["restricoes_mascara"] = True
 
 
 def novo_combatente(chave, dados, lado, nome):
@@ -920,6 +1214,9 @@ def novo_combatente(chave, dados, lado, nome):
         "vida": dados["vida"],
         "vida_maxima": dados["vida"],
         "defesa": dados.get("defesa", 0),
+        "funcao": dados.get("funcao", "DPS"),
+        "dificuldade": dados.get("dificuldade", "Média"),
+        "dominio": dados.get("dominio"),
         "velocidade": dados["velocidade"],
         "energia": dados["energia"],
         "energia_maxima": dados["energia"],
@@ -955,6 +1252,26 @@ def novo_combatente(chave, dados, lado, nome):
         "cura_restante": dados["vida"] * CURA_INIMIGO["limite_total"],
         "fugiu": False,
         "morto": False,
+        "turnos_atuados": 0,
+        "bravura": 0,
+        "ultimo_ataque": None,
+        "combo_soco": 0,
+        "critico_garantido": False,
+        "dominio_pendente": 0,
+        "dominio_restante": 0,
+        "dominio_nome": None,
+        "contrato_restante": 0,
+        "turnos_incapacitado": 0,
+        "cristal_usado": False,
+        "verme_restante": 0,
+        "formas_usadas": False,
+        "contrato_usado": False,
+        "curou_batalha": False,
+        "repetir_ataque": 0,
+        "barril_conteudo": [],
+        "alvo_forcado": None,
+        "verme_dano_recebido": 0,
+        "verme_usado": False,
     }
 
 
@@ -1037,6 +1354,11 @@ def mods(c):
             elif chave in m:
                 m[chave] += valor
 
+    if c.get("bravura", 0) >= 5:
+        m["dano"] *= 1.25
+    if c.get("dominio_restante", 0) > 0:
+        m["dano"] *= 1.2
+
     porcentagem = c["vida"] / c["vida_maxima"] * 100
 
     for furia in m["furia"]:
@@ -1096,9 +1418,15 @@ def mult_elemento(alvo, elemento):
     elemento = elemento or "neutro"
     tabela = ELEMENTOS.get(elemento_defensivo(alvo), {})
 
-    fraco = set(tabela.get("fraco_a", [])) | set(alvo["fraquezas"])
-    resiste = set(tabela.get("resiste", [])) | set(alvo["resistencias"])
-    anula = set(tabela.get("anula", [])) | set(alvo["anulacoes"])
+    mods_reliquia = ((alvo.get("reliquia") or {}).get("mods", {}))
+    tipo_climatico = None
+    if mods_reliquia.get("tipagem_climatica"):
+        tipo_climatico = {"chuva": "agua", "sol": "fogo", "neve": "gelo", "tempestade": "raio",
+                          "chuva_trovoada": "raio", "chuva_tempestade": "agua", "lua_azul": "luz"}.get(clima.get("tipo"))
+    extra = ELEMENTOS.get(tipo_climatico, {})
+    fraco = set(tabela.get("fraco_a", [])) | set(extra.get("fraco_a", [])) | set(alvo["fraquezas"])
+    resiste = set(tabela.get("resiste", [])) | set(extra.get("resiste", [])) | set(alvo["resistencias"])
+    anula = set(tabela.get("anula", [])) | set(extra.get("anula", [])) | set(alvo["anulacoes"])
 
     # as listas próprias do personagem têm prioridade sobre a tabela
     fraco -= set(alvo["resistencias"])
@@ -1117,6 +1445,10 @@ def mult_elemento(alvo, elemento):
     if elemento in resiste:
         mult *= ELEMENTO_MULT["resistencia"]
         etiqueta = "resistencia"
+
+    if alvo["efeitos"].get("encharcado", 0) and elemento in ("raio", "eletrico"):
+        mult *= 1.5
+        etiqueta = "fraqueza"
 
     return mult, etiqueta
 
@@ -1151,6 +1483,12 @@ def texto_afinidades(c):
 # =====================================================
 def ataques_do(c):
     # ataques da classe/inimigo + ataques exclusivos da mega forma ativa
+    if c.get("restricoes_mascara"):
+        lista = ["olhos especiais", "corte dimensional", "queimar", "corte flamejante"]
+        fe = c["forma_estado"]
+        if fe["ativa"] and fe["atual"]:
+            lista.extend(fe["atual"].get("ataques", []))
+        return list(dict.fromkeys(lista))
     lista = list(c["ataques"])
     fe = c["forma_estado"]
 
@@ -1180,12 +1518,34 @@ def restringe(c, tipo):
     return bool(c["contrato"]) and tipo in c["contrato"]["restringe"]
 
 
-def assinar_contrato(c, nome):
+def assinar_contrato(c, nome, alvo=None):
+    if nome == "contrato das correntes igualitárias de fogo":
+        if alvo not in vivos(oposto(c)):
+            print("Escolha um adversário vivo para receber as correntes.")
+            return False
+        for atributo, maximo in (("vida", "vida_maxima"), ("energia", "energia_maxima"), ("escudo_vida", "escudo_max")):
+            maximo_compartilhado = round((c[maximo] + alvo[maximo]) / 2)
+            atual_compartilhado = round((c[atributo] + alvo[atributo]) / 2)
+            c[maximo] = alvo[maximo] = maximo_compartilhado
+            c[atributo] = alvo[atributo] = min(maximo_compartilhado, atual_compartilhado)
     c["contrato"] = dict(CONTRATOS[nome], nome=nome)
+    c["contrato_usado"] = True
+    c["contrato_restante"] = int(CONTRATOS[nome].get("duracao", 0))
+    if c.get("reliquia") and c["reliquia"].get("nome") == "máscara de esqueleto":
+        for item_nome in inventario:
+            inventario[item_nome] = 0
+        c["dano_item_mult"] = c.get("dano_item_mult", 1) * 1.25
+        c["defesa"] += 10
+        c["energia"] = c["energia_maxima"]
+    if c.get("reliquia") and c["reliquia"].get("nome") == "lâmina do sacrifício":
+        c["contratou_batalha"] = True
 
     print(f"{R(c)} assinou o {nome}!")
     print(f"  - {CONTRATOS[nome]['descricao']}")
     print(f"  - Com um contrato, {r(c)} não pode mais usar mega forma.")
+    if nome == "contrato das correntes igualitárias de fogo":
+        print(f"  - Correntes ligaram {R(c)} a {R(alvo)}; vida, energia e escudo foram igualados pela média.")
+    return True
 
 
 def mult_clima(elemento):
@@ -1247,11 +1607,11 @@ def chance_esquiva_c(c):
 
 
 def defesa_c(c):
-    return c["defesa"] + mods(c)["defesa"]
+    return c["defesa"] + mods(c)["defesa"] + c.get("defesa_buff", 0)
 
 
 def critico_c(c):
-    return c["critico"] + mods(c)["critico"]
+    return c["critico"] + mods(c)["critico"] + c.get("critico_buff", 0)
 
 
 def curar(c, quantidade):
@@ -1261,6 +1621,8 @@ def curar(c, quantidade):
 
     antes = c["vida"]
     c["vida"] = min(c["vida_maxima"], round(c["vida"] + quantidade, 2))
+    if c["vida"] > antes:
+        c["curou_batalha"] = True
 
     return round(c["vida"] - antes, 2)
 
@@ -1315,6 +1677,12 @@ def processar_efeitos_inicio(c):
             dano = round(cfg["dano"] * mult_clima(cfg.get("elemento")), 2)
             c["vida"] = max(0, round(c["vida"] - dano, 2))
             print(f"{R(c)} sofreu {dano} de dano de {efeito}.")
+            if efeito == "queima" and (c.get("reliquia") or {}).get("nome") in {"fruto de fogo", "fruto elétrico", "fruto gelado"}:
+                ganho = curar(c, dano)
+                print(f"O fruto restaurou {ganho} de vida para {R(c)}.")
+            if cfg.get("chance_lento") and sorteio(cfg["chance_lento"]):
+                pode_agir = False
+                print(f"{R(c)} perdeu a ação por estar engasgado.")
 
         elif cfg["tipo"] == "impede":
             print(f"{R(c)} está {cfg['estado']} e não pode agir!")
@@ -1375,6 +1743,39 @@ def checar_morte(c):
         return False
 
     c["vida"] = 0
+    if c.get("verme_restante", 0) > 0:
+        if c.get("verme_dano_recebido", 0) >= 100:
+            snapshot = c.pop("verme_snapshot", None)
+            if snapshot:
+                c.update(snapshot)
+                c["vida"] = max(1, round(c["vida_maxima"] * .3))
+                c["verme_restante"] = 0
+                print(f"{R(c)} saiu da forma de Verme após receber 100 de dano.")
+                return False
+        c["vida"] = 1
+        return False
+
+    reliquia_mods = ((c.get("reliquia") or {}).get("mods", {}))
+    if reliquia_mods.get("reviver_cristal") and not c.get("cristal_usado"):
+        c["cristal_usado"] = True
+        if sorteio(reliquia_mods["reviver_cristal"]):
+            c["vida"] = c["vida_maxima"]
+            c["reliquia"] = None
+            print(f"O coração de cristal quebrou e reviveu {R(c)} com vida completa!")
+            return False
+    if (reliquia_mods.get("verme_sacrificio") and not c.get("verme_usado")
+            and not c.get("formas_usadas") and not c.get("contrato_usado") and not c.get("curou_batalha")):
+        c["verme_usado"] = True
+        c["verme_snapshot"] = {key: deepcopy(c[key]) for key in ("chave", "vida", "vida_maxima", "defesa", "energia", "energia_maxima", "velocidade", "elemento", "ataques", "formas", "habilidade", "escudo_max", "escudo_vida", "reliquia")}
+        c["vida"] = c["vida_maxima"] = 1
+        c["escudo_max"] = c["escudo_vida"] = 100
+        c["velocidade"] = 1200
+        c["verme_restante"] = 6
+        c["verme_dano_recebido"] = 0
+        c["chave"] = "verme sacrificial"
+        c["ataques"] = ["bater"]
+        print(f"{R(c)} virou Verme Sacrificial: 1 HP, escudo 100 e proteção por 5 rodadas!")
+        return False
 
     if c["lado"] == "heroi" and tentar_ressuscitar(c):
         return False
@@ -1393,12 +1794,13 @@ def calcular_golpe(atacante, ataque, elemento):
     rolagem = random.choice(dado)
     bruto = base + base * rolagem / 10
 
-    critico = sorteio(critico_c(atacante))
+    critico = atacante.pop("critico_garantido_proximo", False) or sorteio(critico_c(atacante))
 
     if critico:
         bruto *= CRITICO["multiplicador"]
 
     bruto *= mods(atacante)["dano"]
+    bruto *= atacante.get("dano_combo_ataque", 1)
     bruto *= mult_clima(elemento)
     terreno_nome = normalizar(terreno["nome"])
     tipo = elemento_defensivo(atacante)
@@ -1419,6 +1821,9 @@ def receber_dano(atacante, alvo, bruto):
     defesa = max(0, defesa_c(alvo) * (1 - m_atacante["perfura"]))
     dano = max(0, bruto - defesa)
     dano *= (1 - m_alvo["reducao"])
+    if clima.get("tipo") == "lua_azul":
+        portador = (alvo.get("reliquia") or {}).get("nome") == "colar de ouro da lua protetora"
+        dano *= .1 if portador else .2
 
     # inimigo que estava se defendendo recebe metade do dano
     if alvo["defendendo"] and alvo["lado"] == "inimigo":
@@ -1427,6 +1832,8 @@ def receber_dano(atacante, alvo, bruto):
         print(f"{R(alvo)} estava se defendendo!")
 
     dano = round(dano, 2)
+    if alvo.get("dominio_restante", 0) > 0:
+        dano = round(dano * .8, 2)
 
     if dano <= 0:
         print(f"O golpe não causou dano em {r(alvo)}.")
@@ -1463,6 +1870,17 @@ def receber_dano(atacante, alvo, bruto):
         return 0
 
     alvo["vida"] = max(0, round(alvo["vida"] - dano, 2))
+    if alvo.get("verme_restante", 0) > 0:
+        alvo["verme_dano_recebido"] = alvo.get("verme_dano_recebido", 0) + dano
+        if alvo["verme_dano_recebido"] >= 100:
+            snapshot = alvo.pop("verme_snapshot", None)
+            if snapshot:
+                alvo.update(snapshot)
+                alvo["vida"] = max(1, round(alvo["vida_maxima"] * .3))
+                alvo["verme_restante"] = 0
+                print(f"{R(alvo)} saiu da forma de Verme após receber 100 de dano.")
+                return dano
+        alvo["vida"] = max(1, alvo["vida"])
 
     print(f"{R(alvo)} sofreu {dano} de dano. Vida: {alvo['vida']}/{alvo['vida_maxima']}.")
 
@@ -1488,6 +1906,14 @@ def receber_dano(atacante, alvo, bruto):
         checar_morte(atacante)
 
     checar_morte(alvo)
+
+    if atacante.get("verme_restante", 0) > 0 and alvo["vida"] <= 0:
+        snapshot = atacante.pop("verme_snapshot", None)
+        if snapshot:
+            atacante.update(snapshot)
+            atacante["vida"] = max(1, round(atacante["vida_maxima"] * .3))
+            atacante["verme_restante"] = 0
+            print(f"{R(atacante)} voltou à forma original após executar um alvo.")
 
     return dano
 
@@ -1530,6 +1956,9 @@ def atingir(atacante, alvo, ataque):
         return
 
     elemento = elemento_ataque(atacante, ataque)
+    if ataque.get("primeiro_turno") and atacante.get("turnos_atuados", 0) > 1:
+        print(f"{R(atacante)} só poderia usar {ataque.get('nome', 'Fake Out')} no primeiro turno.")
+        return
     mult, etiqueta = mult_elemento(alvo, elemento)
 
     # anulação: o ataque inteiro (dano e efeitos) é anulado
@@ -1553,6 +1982,13 @@ def atingir(atacante, alvo, ataque):
         mult *= alvo.get("vulnerabilidades", {}).get(elemento, 1)
         if (atacante.get("reliquia") or {}).get("mods", {}).get("dano_espadas") and any(t in alvo["chave"] for t in ("espad", "samurai", "cavaleiro negro")):
             mult *= atacante["reliquia"]["mods"]["dano_espadas"]
+        mods_alvo = ((alvo.get("reliquia") or {}).get("mods", {}))
+        elemento_clima = {"chuva": "agua", "sol": "fogo", "neve": "gelo", "tempestade": "raio",
+                          "chuva_trovoada": "raio", "chuva_tempestade": "agua", "lua_azul": "luz"}.get(clima.get("tipo"))
+        if mods_alvo.get("absorve_clima") and elemento == elemento_clima:
+            cura_absorvida = curar(alvo, round(bruto * mult) * .2)
+            print(f"{R(alvo)} absorveu o elemento do clima e recuperou {cura_absorvida} de vida.")
+            return
         causado = receber_dano(atacante, alvo, round(bruto * mult))
         if (atacante.get("reliquia") or {}).get("mods", {}).get("roubo"):
             nome_roubado = random.choice(list(ITENS))
@@ -1570,6 +2006,9 @@ def atingir(atacante, alvo, ataque):
 
     if alvo["vida"] <= 0:
         return
+
+    if ataque.get("util") and ataque.get("dano", 0) > 0:
+        usar_util(atacante, atacante, ataque)
 
     # efeito do próprio ataque
     efeito = ataque.get("efeito")
@@ -1618,12 +2057,27 @@ def atingir(atacante, alvo, ataque):
 def usar_ataque(atacante, nome_ataque, alvos):
     ataque = ATAQUES[nome_ataque]
 
+    reliquia = atacante.get("reliquia") or {}
+    if reliquia.get("mods", {}).get("combo_repetido"):
+        if atacante.get("ultimo_ataque_repetido") == nome_ataque:
+            atacante["combo_repetido_pct"] = min(100, atacante.get("combo_repetido_pct", 0) + 20)
+        else:
+            atacante["combo_repetido_pct"] = 0
+        atacante["ultimo_ataque_repetido"] = nome_ataque
+        atacante["dano_combo_ataque"] = 1 + atacante["combo_repetido_pct"] / 100
+        if atacante["combo_repetido_pct"] >= 100:
+            atacante["critico_garantido_proximo"] = True
+            atacante["combo_repetido_pct"] = 0
+
     for alvo in alvos:
 
         if alvo["vida"] <= 0 or alvo["fugiu"]:
             continue
 
-        for _ in range(ataque.get("golpes", 1)):
+        golpes = ataque.get("golpes", 1)
+        if ataque.get("golpes_aleatorios"):
+            golpes = random.randint(*ataque["golpes_aleatorios"])
+        for _ in range(golpes):
 
             if alvo["vida"] <= 0:
                 break
@@ -1632,6 +2086,8 @@ def usar_ataque(atacante, nome_ataque, alvos):
 
         if atacante["vida"] <= 0:
             break
+
+    atacante.pop("dano_combo_ataque", None)
 
 
 def usar_util(c, alvo, ataque):
@@ -1649,6 +2105,79 @@ def usar_util(c, alvo, ataque):
         ganho = curar(alvo, util["cura"])
         print(f"{R(alvo)} recuperou {ganho} de vida ({alvo['vida']}/{alvo['vida_maxima']}).")
 
+    if "energia" in util:
+        energia_antes = alvo["energia"]
+        alvo["energia"] = min(alvo["energia_maxima"], alvo["energia"] + int(util["energia"]))
+        print(f"{R(alvo)} recuperou {alvo['energia'] - energia_antes} de energia.")
+
+    alvos = vivos(c["lado"])
+    if util.get("alvos"):
+        protegidos = [alvo] + [aliado for aliado in alvos if aliado is not alvo]
+        for aliado in protegidos[:int(util["alvos"])]:
+            aliado["barreira"] = {"valor": max(aliado["barreira"]["valor"], util.get("protecao", 0)), "restam": util.get("rodadas", 2) + 1}
+            print(f"{R(aliado)} recebeu barreira de {aliado['barreira']['valor']}.")
+    if "buff" in util or "critico" in util or "defesa" in util or "equipe" in util:
+        recipientes = alvos if util.get("equipe") else [alvo]
+        for recipiente in recipientes:
+            buff = util.get("buff")
+            if buff == "forca":
+                recipiente["buffs"]["forca"] = max(recipiente["buffs"].get("forca", 0), util.get("duracao", 2) + 1)
+            elif buff == "velocidade":
+                bonus_novo = util.get("valor", 25)
+                bonus_anterior = recipiente.get("velocidade_buff", 0)
+                recipiente["velocidade_buff"] = bonus_novo
+                recipiente["velocidade"] += bonus_novo - bonus_anterior
+                recipiente["buffs"]["velocidade"] = util.get("duracao", 2) + 1
+            elif buff == "critico":
+                recipiente["critico_buff"] = util.get("critico", 30)
+                recipiente["buffs"]["critico"] = util.get("duracao", 2) + 1
+            elif buff == "defesa":
+                recipiente["defesa_buff"] = util.get("defesa", 10)
+                recipiente["buffs"]["defesa"] = util.get("duracao", 2) + 1
+            print(f"{R(recipiente)} recebeu o bônus {buff or 'de força'}.")
+    if "provocar" in util:
+        for inimigo in vivos(oposto(c)):
+            inimigo["alvo_forcado"] = c
+        print(f"Os inimigos foram provocados e mirarão em {R(c)}.")
+    if util.get("sacrificio"):
+        if estado.get("modo") != "dupla":
+            print("Sacrifício só pode ser usado no modo Dupla.")
+            return
+        if alvo is c:
+            print("Escolha outro aliado ou inimigo para o sacrifício.")
+            return
+        alvo["vida"] = 0
+        if not checar_morte(alvo):
+            print(f"{R(alvo)} sobreviveu ao sacrifício; os atributos não foram aumentados.")
+            return
+        c["vida_maxima"] = round(c["vida_maxima"] * 1.25)
+        c["vida"] = min(c["vida_maxima"], round(c["vida"] * 1.25))
+        c["energia_maxima"] = round(c["energia_maxima"] * 1.25)
+        c["energia"] = min(c["energia_maxima"], round(c["energia"] * 1.25))
+        c["escudo_max"] = round(c["escudo_max"] * 1.25)
+        c["escudo_vida"] = round(c["escudo_vida"] * 1.25)
+        c["velocidade"] = round(c["velocidade"] * 1.25)
+        c["defesa"] = round(c["defesa"] * 1.25)
+        print(f"{R(alvo)} foi sacrificado; os atributos de {R(c)} aumentaram em 25%.")
+    if util.get("roubar"):
+        disponiveis = [nome for nome, qtd in inventario.items() if qtd > 0]
+        if disponiveis:
+            nome = random.choice(disponiveis)
+            inventario[nome] -= 1
+            c["inventario_roubado"][nome] = c["inventario_roubado"].get(nome, 0) + 1
+            print(f"{R(c)} roubou {nome}!")
+    if util.get("ligacao_igualitaria"):
+        for atributo, campo in (("vida", "vida"), ("energia", "energia"), ("escudo_vida", "escudo_vida")):
+            metade = round((c[campo] + alvo[campo]) / 2)
+            c[campo] = alvo[campo] = metade
+        print(f"{R(c)} e {R(alvo)} compartilharam vida, energia e escudo igualmente.")
+    if util.get("dominio"):
+        if c.get("dominio_pendente") or c.get("dominio_restante"):
+            print("A expansão de domínio já está ativa ou pendente.")
+        else:
+            c["dominio_pendente"] = 1
+            print(f"{R(c)} iniciou a expansão; o domínio abrirá na próxima rodada.")
+
 
 # =====================================================
 # MEGA FORMAS
@@ -1660,6 +2189,7 @@ def ativar_forma(c, forma):
     fe["usada"] = True
     fe["atual"] = forma
     fe["restam"] = FORMAS["duracao"] + 1   # o turno da transformação não conta
+    c["formas_usadas"] = True
 
     titulo = forma["nome"]
 
@@ -1716,6 +2246,30 @@ def aplicar_por_turno(c, forma):
 # =====================================================
 def inicio_de_turno(c):
     """Retorna True se o combatente pode agir neste turno."""
+    c["turnos_atuados"] = c.get("turnos_atuados", 0) + 1
+    if c.get("dominio_pendente", 0):
+        c["dominio_pendente"] -= 1
+        if c["dominio_pendente"] == 0:
+            forma = c["forma_estado"].get("atual") or {}
+            dominio = forma.get("dominio") or c.get("dominio") or DOMINIOS.get(c["chave"], {}).get("normal") or f"Domínio de {elemento_defensivo(c)}"
+            rivais = [f for f in vivos(oposto(c)) if f.get("dominio_restante", 0) > 0]
+            if rivais and random.random() < .5:
+                for rival in rivais:
+                    rival["dominio_restante"] = 0
+                    rival["dominio_nome"] = None
+                print(f"{R(c)} venceu a disputa: {dominio} prevaleceu!")
+            elif rivais:
+                vencedor = random.choice(rivais)
+                for rival in rivais:
+                    rival["dominio_restante"] = 0
+                    rival["dominio_nome"] = None
+                vencedor["dominio_nome"] = vencedor.get("dominio") or f"Domínio de {elemento_defensivo(vencedor)}"
+                vencedor["dominio_restante"] = 4
+                print(f"{R(vencedor)} venceu a disputa: {vencedor['dominio_nome']} prevaleceu!")
+                return True
+            c["dominio_nome"] = dominio
+            c["dominio_restante"] = 4
+            print(f"A expansão {dominio} protege e fortalece {R(c)} por 3 rodadas.")
     m = mods(c)
 
     habilidade = c.get("habilidade") or {}
@@ -1763,6 +2317,11 @@ def inicio_de_turno(c):
         # ressuscitou: os efeitos foram removidos
         pode_agir = True
 
+    if c.get("turnos_incapacitado", 0) > 0:
+        c["turnos_incapacitado"] -= 1
+        pode_agir = False
+        print(f"{R(c)} está incapacitado e perderá este turno ({c['turnos_incapacitado']} restante(s)).")
+
     return pode_agir
 
 
@@ -1774,6 +2333,21 @@ def fim_de_turno(c):
 
             if c["buffs"][chave] == 0:
                 print(f"O efeito de {BUFF_NOMES[chave]} em {r(c)} acabou.")
+                if chave == "velocidade":
+                    c["velocidade"] = max(1, c["velocidade"] - c.pop("velocidade_buff", 0))
+                elif chave == "defesa":
+                    c.pop("defesa_buff", None)
+                elif chave == "critico":
+                    c.pop("critico_buff", None)
+
+    if c.get("contrato_restante", 0) > 0:
+        c["contrato_restante"] -= 1
+        if c["contrato_restante"] == 0:
+            c["contrato"] = None
+            print(f"O contrato temporário de {R(c)} terminou.")
+            if c["chave"] == "boxeador":
+                c["turnos_incapacitado"] = max(c.get("turnos_incapacitado", 0), 1)
+                print(f"{R(c)} ficou exausto após o contrato.")
 
     barreira = c["barreira"]
 
@@ -1795,6 +2369,21 @@ def fim_de_turno(c):
 
 
 def fim_de_rodada():
+    for combatente in vivos("heroi") + vivos("inimigo"):
+        if combatente.get("dominio_restante", 0) > 0:
+            combatente["dominio_restante"] -= 1
+            if combatente["dominio_restante"] == 0:
+                print(f"O domínio {combatente.get('dominio_nome')} de {R(combatente)} se desfez.")
+                combatente["dominio_nome"] = None
+        if combatente.get("verme_restante", 0) > 0:
+            combatente["verme_restante"] -= 1
+            if combatente["verme_restante"] == 0:
+                snapshot = combatente.pop("verme_snapshot", None)
+                if snapshot:
+                    for chave, valor in snapshot.items():
+                        combatente[chave] = valor
+                    combatente["vida"] = max(1, round(combatente["vida_maxima"] * .3))
+                    print(f"{R(combatente)} saiu da forma de Verme e voltou à forma original.")
     if terreno["restam"] > 0:
         for c in vivos("heroi") + vivos("inimigo"):
             tipo = elemento_defensivo(c)
@@ -2024,7 +2613,7 @@ def acao_inimigo(c):
         c["energia"] -= ataque["energia"]
         registrar_uso(c, nome_ataque)
 
-        if ataque.get("util"):
+        if ataque.get("util") and ataque.get("dano", 0) <= 0:
 
             print(f"{R(c)} usou {nome_ataque} e gastou {ataque['energia']} de energia.")
             usar_util(c, c, ataque)
@@ -2034,7 +2623,9 @@ def acao_inimigo(c):
             if ataque.get("area"):
                 alvos = vivos("heroi")
             else:
-                alvos = [random.choice(vivos("heroi"))]
+                alvo_forcado = c.get("alvo_forcado")
+                equipe_heroi = vivos("heroi")
+                alvos = [alvo_forcado if any(alvo_forcado is h for h in equipe_heroi) else random.choice(equipe_heroi)]
 
             turnos_carga = int(ataque.get("carrega", 0) or (
                 1 if (c.get("reliquia") or {}).get("nome") == "grande espada" and ataque.get("dano", 0) >= 35 else 0
@@ -2056,6 +2647,8 @@ def acao_inimigo(c):
 
                 print(f"{R(c)} usou {nome_ataque} e gastou {ataque['energia']} de energia.")
                 usar_ataque(c, nome_ataque, alvos)
+                if ataque.get("util"):
+                    usar_util(c, c, ataque)
 
     # ---------- DEFENDER ----------
     elif acao == "defender":
@@ -2254,7 +2847,8 @@ def heroi_atacar(c):
     print("Seus ataques disponíveis:")
 
     for nome in disponiveis:
-        print(f"  - {nome} ({descrever_ataque(nome)})")
+        ataque_info = ATAQUES[nome]
+        print(f"  - [{ataque_info.get('categoria', 'fisico')}] {nome} (prioridade {ataque_info.get('prioridade', 0)}; {descrever_ataque(nome)})")
 
     nome_ataque = achar_nome(input("Escolha o ataque que queira usar: "), disponiveis)
 
@@ -2263,6 +2857,10 @@ def heroi_atacar(c):
         return False
 
     ataque = ATAQUES[nome_ataque]
+
+    if ataque.get("primeiro_turno") and c.get("turnos_atuados", 0) > 1:
+        print(f"{nome_ataque} só pode ser usado no primeiro turno.")
+        return False
 
     if not ataque_disponivel(c, nome_ataque):
         print(
@@ -2275,14 +2873,32 @@ def heroi_atacar(c):
         print(f"Você não possui energia suficiente para usar {nome_ataque}.")
         return False
 
-    # ataques de utilidade (clima, proteção, cura)
-    if ataque.get("util"):
+    # Ações de utilidade sem dano; golpes como Critic Upper continuam causando dano.
+    if ataque.get("util") and ataque.get("dano", 0) <= 0:
 
         alvo_util = c
 
-        if ("cura" in ataque["util"] or "protecao" in ataque["util"]) and len(vivos("heroi")) > 1:
+        if any(k in ataque["util"] for k in ("cura", "protecao", "buff", "alvos", "equipe", "critico", "defesa")) and len(vivos("heroi")) > 1:
             alvo_util = escolher_aliado()
 
+            if alvo_util is None:
+                return False
+
+        if ataque["util"].get("sacrificio"):
+            if estado.get("modo") != "dupla":
+                print("Sacrifício só pode ser usado no modo Dupla.")
+                return False
+            alvos_validos = [f for f in vivos("heroi") + vivos("inimigo") if f is not c]
+            alvo_util = escolher_alvo(alvos_validos, "combatente para sacrificar")
+            if alvo_util is None:
+                return False
+        elif ataque["util"].get("ligacao_igualitaria"):
+            alvos_validos = [f for f in vivos("heroi") + vivos("inimigo") if f is not c]
+            alvo_util = escolher_alvo(alvos_validos, "combatente para ligar")
+            if alvo_util is None:
+                return False
+        elif ataque["util"].get("alvos"):
+            alvo_util = escolher_aliado()
             if alvo_util is None:
                 return False
 
@@ -2295,7 +2911,9 @@ def heroi_atacar(c):
     if ataque.get("area"):
         alvos = vivos("inimigo")
     else:
-        alvo = escolher_alvo(vivos("inimigo"), "alvo")
+        equipe_inimigo = vivos("inimigo")
+        alvo_forcado = c.get("alvo_forcado")
+        alvo = alvo_forcado if any(alvo_forcado is inim for inim in equipe_inimigo) else escolher_alvo(equipe_inimigo, "alvo")
 
         if alvo is None:
             return False
@@ -2320,6 +2938,8 @@ def heroi_atacar(c):
 
     print(f"{R(c)} usou {nome_ataque} e gastou {ataque['energia']} de energia.")
     usar_ataque(c, nome_ataque, alvos)
+    if ataque.get("util"):
+        usar_util(c, c, ataque)
     return True
 
 
@@ -2376,19 +2996,35 @@ def heroi_contrato(c):
     if c["forma_estado"]["usada"]:
         print("Quem já usou a mega forma não pode fazer contrato.")
         return False
+    if c.get("contrato_usado"):
+        print("Este combatente já usou seu contrato nesta luta.")
+        return False
 
-    print("Contratos disponíveis (quem faz contrato não pode usar mega forma):")
+    disponiveis = c.get("contratos") or CONTRATOS_PERSONAGEM.get(c["chave"], [])
+    if c["chave"] == "boxeador" and c.get("bravura", 0) < 10:
+        print("O contrato do Boxeador exige 10 turnos de bravura.")
+        return False
+    if not disponiveis:
+        print("Este personagem não tem contratos disponíveis.")
+        return False
+    print("Contratos deste personagem (quem faz contrato não pode usar mega forma):")
 
-    for nome, dados_contrato in CONTRATOS.items():
+    for nome in disponiveis:
+        dados_contrato = CONTRATOS.get(nome, {})
         print(f"  - {nome}: {dados_contrato['descricao']}")
 
-    nome = achar_nome(input("Escolha o contrato (ou deixe vazio para cancelar): "), CONTRATOS)
+    nome = achar_nome(input("Escolha o contrato (ou deixe vazio para cancelar): "), disponiveis)
 
     if nome is None:
         print("Contrato cancelado.")
         return False
 
-    assinar_contrato(c, nome)
+    alvo_correntes = None
+    if nome == "contrato das correntes igualitárias de fogo":
+        alvo_correntes = escolher_alvo(vivos(oposto(c)), "adversário para as correntes")
+        if alvo_correntes is None:
+            return False
+    assinar_contrato(c, nome, alvo_correntes)
     return True
 
 
@@ -2398,7 +3034,7 @@ def heroi_transformar(c):
         return False
     fe = c["forma_estado"]
 
-    if c["contrato"]:
+    if c["contrato"] or c.get("contrato_usado"):
         print("Quem fez um contrato não pode usar mega forma.")
         return False
 
@@ -2473,6 +3109,73 @@ def aplicar_item(c, nome):
         c["restricoes_elixir"] = True
         print(f"{R(c)} negou a morte e permaneceu com 1 HP. Não poderá defender, contratar, curar, transformar ou fugir.")
         return True
+    if c.get("restricoes_mascara") and nome not in {"pedra de chamas", "alma", "bomba de chamas azuis"}:
+        print("A máscara Hollow permite apenas pedra de chamas, alma e bomba de chamas azuis.")
+        return False
+    if tipo == "vinho":
+        inventario[nome] -= 1
+        c["vida"] = c["vida_maxima"]
+        c["turnos_incapacitado"] = max(c.get("turnos_incapacitado", 0), 2)
+        c["curou_batalha"] = True
+        print(f"{R(c)} restaurou toda a vida, mas ficará 2 turnos sem agir.")
+        return True
+    if tipo == "barril":
+        conteudo = c.setdefault("barril_conteudo", [])
+        print("Barril: itens guardados — " + (", ".join(conteudo) if conteudo else "vazio"))
+        acao_barril = normalizar(input("Digite guardar ou retirar: "))
+        if acao_barril.startswith("retirar") and conteudo:
+            escolha = achar_nome(input(f"Qual item retirar ({', '.join(conteudo)}): "), conteudo)
+            if escolha:
+                conteudo.remove(escolha)
+                inventario[escolha] = inventario.get(escolha, 0) + 1
+                print(f"{R(c)} retirou {escolha} do barril.")
+                return True
+            return False
+        if len(conteudo) >= 3:
+            print("O barril está cheio (3/3).")
+            return False
+        validos = [item_nome for item_nome, qtd in inventario.items() if qtd > 0
+                   and item_nome != nome and ITENS.get(item_nome, {}).get("tipo") not in {"cura", "energia", "forca", "aleatorio", "velocidade", "alma", "pedra"}
+                   and "poção" not in item_nome.casefold() and "pocao" not in item_nome.casefold()]
+        escolha = achar_nome(input(f"Qual item guardar ({', '.join(validos)}): "), validos) if validos else None
+        if not escolha:
+            print("Não há item permitido ou a escolha não é válida.")
+            return False
+        inventario[escolha] -= 1
+        conteudo.append(escolha)
+        print(f"{R(c)} guardou {escolha} no barril ({len(conteudo)}/3).")
+        return True
+    if tipo == "alma":
+        opcoes = ["ataque", "defesa", "energia"]
+        print("Bônus da alma: ataque (+25%), defesa (+10) ou energia (cheia).")
+        escolha = achar_nome(input("Escolha o bônus: "), opcoes)
+        if not escolha:
+            return False
+        alvo = escolher_aliado()
+        if alvo is None:
+            return False
+        inventario[nome] -= 1
+        if escolha == "ataque":
+            alvo["buffs"]["forca"] = 4
+        elif escolha == "defesa":
+            alvo["defesa_buff"] = 10
+            alvo["buffs"]["defesa"] = 4
+        else:
+            alvo["energia"] = alvo["energia_maxima"]
+        print(f"A alma concedeu {escolha} a {R(alvo)}.")
+        return True
+    if tipo == "troca_atributos":
+        alvo = escolher_alvo(vivos("inimigo"), "alvo")
+        if alvo is None:
+            return False
+        for attr, maximum in (("vida", "vida_maxima"), ("energia", "energia_maxima"), ("escudo_vida", "escudo_max")):
+            primeiro, segundo = c[attr], alvo[attr]
+            c[attr] = min(c.get(maximum, 10**9), segundo)
+            alvo[attr] = min(alvo.get(maximum, 10**9), primeiro)
+        inventario[nome] -= 1
+        alvo["curou_batalha"] = True
+        print(f"{R(c)} trocou vida, energia e escudo com {R(alvo)}.")
+        return True
     if tipo == "tipagem":
         c["elemento"] = {"chuva": "agua", "sol": "fogo", "neve": "gelo", "tempestade": "raio", "chuva_trovoada": "raio", "chuva_tempestade": "ar", "ventania": "ar"}.get(clima["tipo"], "neutro")
         inventario[nome] -= 1
@@ -2513,6 +3216,8 @@ def aplicar_item(c, nome):
 
         inventario[nome] -= 1
         ganho = curar(alvo, item["cura"])
+        if ganho > 0:
+            alvo["curou_batalha"] = True
         print(f"{R(alvo)} foi curado em {ganho} e está com {alvo['vida']}/{alvo['vida_maxima']} de vida.")
 
     elif tipo == "energia":
@@ -2660,7 +3365,8 @@ def heroi_item(c, item_direto):
         print("Itens disponíveis:")
 
         for nome, quantidade in inventario.items():
-            print(f"  - {nome} (x{quantidade})")
+            descricao = ITENS.get(nome, {}).get("descricao", "Consumível sem descrição.")
+            print(f"  - {nome} (x{quantidade}) — {descricao}")
 
         item_direto = achar_nome(input("Escolha o item a usar: "), inventario)
 
@@ -2734,6 +3440,16 @@ def acao_heroi(c):
         else:
             gastou = heroi_fugir(c)
 
+        if gastou and c["chave"] == "boxeador":
+            if acao in ("defender", "item", "fugir"):
+                c["bravura"] = 0
+                print("A Prova de Bravura foi interrompida.")
+            elif acao != "transformar" or c.get("bravura", 0) >= 5:
+                c["bravura"] += 1
+                if c["bravura"] == 5:
+                    print(f"{R(c)} completou 5 turnos de bravura: +25% de dano e megaforma liberada!")
+                elif c["bravura"] == 10:
+                    print(f"{R(c)} liberou seu contrato exclusivo!")
         if gastou or estado["resultado"]:
             return
 
@@ -2750,6 +3466,9 @@ def turno_combatente(c):
     else:
         print(f"\n--- TURNO DO INIMIGO: {R(c)} ---")
 
+    print(f"Turno pessoal: {c.get('turnos_atuados', 0) + 1}")
+    if c.get("funcao") or c.get("dificuldade"):
+        print(f"Função: {c.get('funcao', 'DPS')} · Dificuldade: {c.get('dificuldade', 'Média')} · DEF {c.get('defesa', 0)} · ESC {c.get('escudo_vida', 0)} · EN {c.get('energia', 0)}")
     pode_agir = inicio_de_turno(c)
 
     if c["vida"] <= 0 or c["fugiu"]:
@@ -2790,7 +3509,12 @@ def verificar_fim():
 
 
 def fase(lado):
-    for c in sorted(vivos(lado), key=lambda x: -x["velocidade"]):
+    def iniciativa(combatente):
+        prioridade = max((int(ATAQUES[n].get("prioridade", 0)) for n in ataques_do(combatente)), default=0)
+        suporte = (combatente.get("habilidade") or {}).get("mods", {}).get("prioridade_suporte", 0)
+        return combatente["velocidade"] + 100 * max(prioridade, suporte)
+
+    for c in sorted(vivos(lado), key=iniciativa, reverse=True):
 
         if c["vida"] <= 0 or c["fugiu"] or c["morto"]:
             continue
@@ -2813,7 +3537,12 @@ def fase(lado):
 
 def batalha():
     # quem tem o combatente mais rápido começa
-    if max(h["velocidade"] for h in herois) > max(i["velocidade"] for i in inimigos_lista):
+    def iniciativa(c):
+        prioridade = max((int(ATAQUES[n].get("prioridade", 0)) for n in ataques_do(c)), default=0)
+        suporte = (c.get("habilidade") or {}).get("mods", {}).get("prioridade_suporte", 0)
+        return c["velocidade"] + 100 * max(prioridade, suporte)
+
+    if max(iniciativa(h) for h in herois) > max(iniciativa(i) for i in inimigos_lista):
         lados = ["heroi", "inimigo"]
     else:
         lados = ["inimigo", "heroi"]
@@ -2872,6 +3601,7 @@ def configurar_batalha():
     invocacao_estado["usada"] = False
     clima.update(tipo="limpo", restam=0)
     modo = perguntar("Modo de batalha (solo ou dupla): ", ["solo", "dupla"])
+    estado["modo"] = modo
     quantidade = 1 if modo == "solo" else 2
 
     # nomes dos jogadores (na dupla são dois jogadores, cada um com o seu nome)
@@ -2950,6 +3680,8 @@ def configurar_batalha():
     if any((c.get("reliquia") or {}).get("nome") == "amuleto da lua de sangue" for c in combatentes):
         definir_clima("lua_sangue", 999)
 
+    global DIGITACAO_ATIVA
+    DIGITACAO_ATIVA = True
     print("\nJogadores:")
 
     for h in herois:
@@ -3012,9 +3744,11 @@ def resultado_final():
 
 
 def main():
+    global DIGITACAO_ATIVA
     configurar_batalha()
     batalha()
     resultado_final()
+    DIGITACAO_ATIVA = False
 
 
 if __name__ == "__main__":
